@@ -1,0 +1,33 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [{ "source": "**", "destination": "/index.html" }]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "nexora-pos-system",
+          "appId": "1:781744579644:android:f812fcbc3c7ce10240cf39",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "nexora-pos-system",
+          "configurations": {
+            "android": "1:781744579644:android:f812fcbc3c7ce10240cf39",
+            "ios": "1:781744579644:ios:bb641446826824cd40cf39",
+            "web": "1:781744579644:web:5492f97f4b37904c40cf39",
+            "windows": "1:781744579644:web:b88abfce7c4b27b340cf39"
+          }
+        }
+      }
+    }
+  }
+}

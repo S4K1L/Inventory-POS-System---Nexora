@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Multi-tenant isolation: a user can only touch their own profile and the
+// company they belong to. Tighten further (role-based writes) as modules land.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The signed-in user's own profile document.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      // Allow creating own profile at signup; updates limited to self.
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+    }
+
+    function myCompanyId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId;
+    }
+
+    function isOwner(companyId) {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roleId == 'owner'
+        && myCompanyId() == companyId;
+    }
+
+    // Company document + all nested collections (products, sales, ...).
+    match /companies/{companyId} {
+      // Any member of the company can read it.
+      allow read: if request.auth != null && myCompanyId() == companyId;
+
+      // Creating a company at onboarding: the creator must stamp themselves in.
+      allow create: if request.auth != null;
+
+      // Only the owner can change plan / module / feature toggles.
+      allow update: if isOwner(companyId);
+
+      // Business data under the company inherits membership-based access.
+      match /{document=**} {
+        allow read, write: if request.auth != null && myCompanyId() == companyId;
+      }
+    }
+  }
+}
