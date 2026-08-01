@@ -1,36 +1,65 @@
 rules_version = '2';
 
-// Multi-tenant isolation: a user can only touch their own profile and the
-// company they belong to. Tighten further (role-based writes) as modules land.
+// Multi-tenant isolation with a platform super-admin layer.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // The signed-in user's own profile document.
-    match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      // Allow creating own profile at signup; updates limited to self.
-      allow create, update: if request.auth != null && request.auth.uid == uid;
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-
     function myCompanyId() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId;
+      return myProfile().companyId;
     }
-
+    function canManageUsers() {
+      return myProfile().roleId == 'owner' || myProfile().roleId == 'manager';
+    }
     function isOwner(companyId) {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roleId == 'owner'
-        && myCompanyId() == companyId;
+      return myProfile().roleId == 'owner' && myProfile().companyId == companyId;
     }
 
-    // Company document + all nested collections (products, sales, ...).
-    match /companies/{companyId} {
-      // Any member of the company can read it.
-      allow read: if request.auth != null && myCompanyId() == companyId;
+    // Platform super-admin(s). Keep this list in sync with
+    // lib/core/platform/platform_admin.dart (kPlatformAdminEmails).
+    function isPlatformAdmin() {
+      return request.auth != null &&
+        request.auth.token.email in ['admin@nexora.net', 'codewithshakil@gmail.com'];
+    }
 
-      // Creating a company at onboarding: the creator must stamp themselves in.
+    // A tenant may edit its own company profile but NOT its subscription
+    // (status / plan / expiry) — those are admin-only.
+    function subscriptionUnchanged() {
+      return request.resource.data.status == resource.data.status &&
+        request.resource.data.plan == resource.data.plan &&
+        request.resource.data.planExpiresAt == resource.data.planExpiresAt;
+    }
+
+    match /users/{userId} {
+      allow read: if isPlatformAdmin() || (request.auth != null && (
+        request.auth.uid == userId ||
+        resource.data.companyId == myCompanyId()
+      ));
+      allow create: if request.auth != null && (
+        request.auth.uid == userId ||
+        (canManageUsers() &&
+          request.resource.data.companyId == myCompanyId())
+      );
+      allow update: if request.auth != null && (
+        request.auth.uid == userId ||
+        (canManageUsers() && resource.data.companyId == myCompanyId())
+      );
+    }
+
+    match /companies/{companyId} {
+      // Admin sees all; members see their own.
+      allow read: if isPlatformAdmin() ||
+        (request.auth != null && myCompanyId() == companyId);
+
+      // Signup creates the company (as pending).
       allow create: if request.auth != null;
 
-      // Only the owner can change plan / module / feature toggles.
-      allow update: if isOwner(companyId);
+      // Admin can change anything (incl. subscription). The owner can change
+      // company settings but not the subscription fields.
+      allow update: if isPlatformAdmin() ||
+        (isOwner(companyId) && subscriptionUnchanged());
 
       // Business data under the company inherits membership-based access.
       match /{document=**} {

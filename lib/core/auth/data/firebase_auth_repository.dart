@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../domain/app_user.dart';
 import '../domain/auth_repository.dart';
@@ -72,6 +73,38 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() => _auth.signOut();
+
+  @override
+  Future<String> createEmployeeAccount({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    // Creating a user with the primary FirebaseAuth would sign the owner out.
+    // A short-lived secondary FirebaseApp lets us create the account in
+    // isolation, then we tear it down — the owner's session is untouched.
+    final secondary = await Firebase.initializeApp(
+      name: 'employeeCreator-${DateTime.now().microsecondsSinceEpoch}',
+      options: Firebase.app().options,
+    );
+    try {
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondary);
+      final cred = await secondaryAuth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      if (displayName != null && displayName.trim().isNotEmpty) {
+        await cred.user?.updateDisplayName(displayName.trim());
+      }
+      final uid = cred.user!.uid;
+      await secondaryAuth.signOut();
+      return uid;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_message(e));
+    } finally {
+      await secondary.delete();
+    }
+  }
 
   String _message(FirebaseAuthException e) {
     switch (e.code) {

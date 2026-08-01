@@ -30,12 +30,15 @@ class PurchaseRequest {
   final bool updateCostPrice;
 }
 
-/// Contract for purchases (stock in).
+/// Contract for purchases (stock in). Stock and purchases are per-branch;
+/// suppliers are company-wide.
 abstract interface class PurchasesRepository {
-  /// Records the purchase AND increments stock for every line, atomically:
-  /// stock += qty, a `purchase` stock movement per line, the supplier's due is
-  /// increased by any unpaid balance, and a bill number is assigned.
-  Future<Purchase> receive(String companyId, PurchaseRequest request);
+  /// Records the purchase AND increments branch stock for every line,
+  /// atomically: stock += qty, a `purchase` movement per line, the supplier's
+  /// due rises by any unpaid balance, and a bill number is assigned.
+  Future<Purchase> receive(
+      String companyId, String branchId, PurchaseRequest request);
 
-  Stream<List<Purchase>> watchRecentPurchases(String companyId, {int limit = 100});
+  Stream<List<Purchase>> watchRecentPurchases(String companyId, String branchId,
+      {int limit = 100});
 }

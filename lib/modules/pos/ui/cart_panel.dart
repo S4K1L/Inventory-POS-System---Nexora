@@ -169,7 +169,7 @@ class _CustomerBar extends ConsumerWidget {
               ),
               if (hasCustomer)
                 InkWell(
-                  onTap: () => notifier.setCustomer(''),
+                  onTap: () => notifier.setCustomer('', ''),
                   child: Icon(Icons.close, size: 16, color: scheme.onSurfaceVariant),
                 ),
             ],
@@ -180,12 +180,14 @@ class _CustomerBar extends ConsumerWidget {
   }
 
   Future<void> _pick(BuildContext context, WidgetRef ref) async {
-    final name = await showModalBottomSheet<String>(
+    final picked = await showModalBottomSheet<(String, String)>(
       context: context,
       isScrollControlled: true,
       builder: (_) => const _CustomerPickerSheet(),
     );
-    if (name != null) ref.read(cartProvider.notifier).setCustomer(name);
+    if (picked != null) {
+      ref.read(cartProvider.notifier).setCustomer(picked.$1, picked.$2);
+    }
   }
 }
 
@@ -236,7 +238,7 @@ class _CustomerPickerSheetState extends ConsumerState<_CustomerPickerSheet> {
                     leading: const Icon(Icons.person_outline),
                     title: Text(c.name),
                     subtitle: c.phone.isEmpty ? null : Text(c.phone),
-                    onTap: () => Navigator.of(context).pop(c.name),
+                    onTap: () => Navigator.of(context).pop((c.id, c.name)),
                   ),
                 if (customers.isEmpty)
                   const Padding(

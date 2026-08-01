@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../access/access.dart';
 import '../access/gates.dart';
 import '../company/company_providers.dart';
 import '../modules/module.dart';
+import '../platform/platform_admin.dart';
 import '../theme/app_tokens.dart';
 import '../theme/theme_mode_provider.dart';
+import '../../modules/branches/branches_providers.dart';
 import '../../modules/dashboard/dashboard_screen.dart';
 import 'app_sidebar.dart';
 import 'module_screens.dart';
@@ -133,8 +136,17 @@ class _TopBar extends ConsumerWidget {
               ],
             ),
           ),
+          const _BranchSelector(),
+          const SizedBox(width: 10),
           if (!compact) ...[
             _SearchBox(),
+            const SizedBox(width: 10),
+          ],
+          if (ref.watch(isPlatformAdminProvider)) ...[
+            _RoundIconButton(
+              icon: Icons.admin_panel_settings_outlined,
+              onTap: () => context.go('/admin'),
+            ),
             const SizedBox(width: 10),
           ],
           _RoundIconButton(
@@ -164,6 +176,81 @@ class _TopBar extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Branch chip in the top bar. Owners/managers can switch branches; a
+/// branch-locked employee sees their branch as a static (locked) chip.
+class _BranchSelector extends ConsumerWidget {
+  const _BranchSelector();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final branch = ref.watch(currentBranchProvider);
+    final branches =
+        (ref.watch(branchesProvider).value ?? const []).where((b) => b.active).toList();
+    final canSwitch = ref.watch(canSwitchBranchProvider);
+    final compact = MediaQuery.sizeOf(context).width < 620;
+
+    if (branch.isEmpty) return const SizedBox.shrink();
+
+    Widget chip(bool withArrow) => Container(
+          height: 42,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12),
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.10),
+            borderRadius: AppRadius.field,
+            border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(canSwitch ? Icons.storefront : Icons.lock_outline,
+                  size: 16, color: scheme.primary),
+              if (!compact) ...[
+                const SizedBox(width: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 130),
+                  child: Text(branch.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: scheme.primary)),
+                ),
+              ],
+              if (withArrow)
+                Icon(Icons.arrow_drop_down, color: scheme.primary),
+            ],
+          ),
+        );
+
+    if (!canSwitch) return chip(false);
+
+    return PopupMenuButton<String>(
+      tooltip: 'Switch branch',
+      onSelected: (id) => ref.read(manualBranchProvider.notifier).select(id),
+      itemBuilder: (_) => [
+        for (final b in branches)
+          PopupMenuItem(
+            value: b.id,
+            child: Row(
+              children: [
+                Icon(
+                  b.id == branch.id
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 18,
+                  color: b.id == branch.id ? scheme.primary : null,
+                ),
+                const SizedBox(width: 8),
+                Text(b.name),
+              ],
+            ),
+          ),
+      ],
+      child: chip(true),
     );
   }
 }

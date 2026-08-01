@@ -86,14 +86,14 @@ class Roles {
     },
   );
 
+  // POS-only employee: sees just the POS screen. Can still attach existing
+  // customers and complete sales (those are data operations, not gated modules).
   static const cashier = Role(
     id: 'cashier',
-    name: 'Cashier',
+    name: 'Cashier (POS only)',
     permissions: {
       Perm.posUse,
-      Perm.salesView,
-      Perm.inventoryView,
-      Perm.customersManage,
+      Perm.posDiscount,
     },
   );
 

@@ -1,12 +1,13 @@
 import '../../modules/module.dart';
 
-/// Subscription tiers. A plan is a convenient *bundle* of modules; a company's
-/// actual access is plan defaults overridden by per-company toggles.
+/// Subscription tiers assigned by the platform admin.
+/// - demo: short free trial (7 days), Pro features locked.
+/// - starter: paid, Pro features locked; admin sets the duration in months.
+/// - pro: everything unlocked; admin sets the duration in months.
 enum PlanTier {
+  demo('demo', 'Demo'),
   starter('starter', 'Starter'),
-  business('business', 'Business'),
-  professional('professional', 'Professional'),
-  enterprise('enterprise', 'Enterprise');
+  pro('pro', 'Pro');
 
   const PlanTier(this.id, this.label);
   final String id;
@@ -15,48 +16,47 @@ enum PlanTier {
   static PlanTier fromId(String? id) {
     return PlanTier.values.firstWhere(
       (p) => p.id == id,
-      orElse: () => PlanTier.starter,
+      orElse: () => PlanTier.demo,
     );
   }
+
+  /// Free trial length for the demo plan.
+  static const demoDuration = Duration(days: 7);
 }
 
-/// Which modules each plan unlocks by default. Core modules are always on and
-/// don't need listing here.
+/// Which modules each plan unlocks.
 class PlanCatalog {
   PlanCatalog._();
 
-  static const _starter = {
-    ModuleId.inventory,
-    ModuleId.pos,
-    ModuleId.sales,
-    ModuleId.customers,
-    ModuleId.reports,
-  };
-
-  static const _business = {
-    ..._starter,
-    ModuleId.purchase,
-    ModuleId.suppliers,
-    ModuleId.expense,
+  /// Modules that require the Pro plan. Locked on Demo and Starter.
+  static const proModules = {
     ModuleId.crm,
+    ModuleId.hr,
+    ModuleId.payroll,
     ModuleId.accounting,
   };
 
-  static const _professional = {
-    ..._business,
-    ModuleId.hr,
-    ModuleId.payroll,
+  /// Everything except the Pro-only modules — available on every plan.
+  static const _base = {
+    ModuleId.inventory,
+    ModuleId.pos,
+    ModuleId.purchase,
+    ModuleId.sales,
+    ModuleId.customers,
+    ModuleId.suppliers,
+    ModuleId.expense,
+    ModuleId.reports,
   };
+
+  static const _all = {..._base, ...proModules};
 
   static Set<ModuleId> modulesFor(PlanTier tier) {
     switch (tier) {
+      case PlanTier.pro:
+        return _all;
+      case PlanTier.demo:
       case PlanTier.starter:
-        return _starter;
-      case PlanTier.business:
-        return _business;
-      case PlanTier.professional:
-      case PlanTier.enterprise:
-        return _professional;
+        return _base;
     }
   }
 }

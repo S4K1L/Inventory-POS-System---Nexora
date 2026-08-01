@@ -7,14 +7,17 @@ import 'package:nexora/core/permissions/permissions.dart';
 
 void main() {
   group('Module access resolution', () {
-    test('plan bundles unlock modules', () {
+    test('Pro modules are locked on Demo/Starter, unlocked on Pro', () {
       const starter = Company(id: 'c1', name: 'S', plan: PlanTier.starter);
-      const professional =
-          Company(id: 'c2', name: 'P', plan: PlanTier.professional);
+      const pro = Company(id: 'c2', name: 'P', plan: PlanTier.pro);
 
+      // Base module available everywhere.
       expect(starter.hasModule(ModuleRegistry.inventory), isTrue);
+      // Pro-only modules gated by plan.
       expect(starter.hasModule(ModuleRegistry.payroll), isFalse);
-      expect(professional.hasModule(ModuleRegistry.payroll), isTrue);
+      expect(starter.hasModule(ModuleRegistry.accounting), isFalse);
+      expect(pro.hasModule(ModuleRegistry.payroll), isTrue);
+      expect(pro.hasModule(ModuleRegistry.accounting), isTrue);
     });
 
     test('per-company override beats the plan in both directions', () {
@@ -27,14 +30,32 @@ void main() {
       const blockPos = Company(
         id: 'c2',
         name: 'B',
-        plan: PlanTier.business,
+        plan: PlanTier.pro,
         moduleOverrides: {'pos': false},
       );
 
       expect(grantCrm.hasModule(ModuleRegistry.crm), isTrue,
-          reason: 'override grants CRM even on Starter');
+          reason: 'override grants Pro CRM even on Starter');
       expect(blockPos.hasModule(ModuleRegistry.pos), isFalse,
-          reason: 'override blocks POS even though the plan includes it');
+          reason: 'override blocks POS even on Pro');
+    });
+
+    test('company is active only when approved and not expired', () {
+      final active = Company(
+        id: 'c1',
+        name: 'A',
+        planExpiresAt: DateTime.now().add(const Duration(days: 3)),
+      );
+      final expired = Company(
+        id: 'c2',
+        name: 'E',
+        planExpiresAt: DateTime.now().subtract(const Duration(days: 1)),
+      );
+      const pending = Company(id: 'c3', name: 'P', status: CompanyStatus.pending);
+
+      expect(active.isActive, isTrue);
+      expect(expired.isActive, isFalse);
+      expect(pending.isActive, isFalse);
     });
 
     test('feature flags default off and honor overrides', () {

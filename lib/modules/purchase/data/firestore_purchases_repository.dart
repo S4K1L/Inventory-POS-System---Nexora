@@ -4,11 +4,11 @@ import '../../inventory/domain/stock_movement.dart';
 import '../domain/purchase.dart';
 import '../domain/purchases_repository.dart';
 
-/// Firestore implementation. [receive] is a single transaction mirroring the
-/// POS checkout, but adding stock instead of removing it: reads products +
-/// counter + supplier, then writes the purchase, a `purchase` movement per
-/// line, incremented stock (and latest cost), the bumped supplier due, and the
-/// bill counter — all or nothing.
+/// Firestore implementation of purchases — scoped per branch (stock in goes to
+/// a specific branch). Suppliers/products are company-wide.
+///
+/// Per branch:  companies/{cid}/branches/{bid}/purchases,  /stock/{pid} { qty },
+///              /stock_movements,  /meta/counters
 class FirestorePurchasesRepository implements PurchasesRepository {
   FirestorePurchasesRepository(this._db);
 
@@ -16,37 +16,43 @@ class FirestorePurchasesRepository implements PurchasesRepository {
 
   DocumentReference<Map<String, dynamic>> _company(String cid) =>
       _db.collection('companies').doc(cid);
-  CollectionReference<Map<String, dynamic>> _purchases(String cid) =>
-      _company(cid).collection('purchases');
+  DocumentReference<Map<String, dynamic>> _branch(String cid, String bid) =>
+      _company(cid).collection('branches').doc(bid);
+  CollectionReference<Map<String, dynamic>> _purchases(String cid, String bid) =>
+      _branch(cid, bid).collection('purchases');
+  CollectionReference<Map<String, dynamic>> _stock(String cid, String bid) =>
+      _branch(cid, bid).collection('stock');
+  CollectionReference<Map<String, dynamic>> _movements(String cid, String bid) =>
+      _branch(cid, bid).collection('stock_movements');
+  DocumentReference<Map<String, dynamic>> _counters(String cid, String bid) =>
+      _branch(cid, bid).collection('meta').doc('counters');
   CollectionReference<Map<String, dynamic>> _products(String cid) =>
       _company(cid).collection('products');
-  CollectionReference<Map<String, dynamic>> _movements(String cid) =>
-      _company(cid).collection('stock_movements');
   CollectionReference<Map<String, dynamic>> _suppliers(String cid) =>
       _company(cid).collection('suppliers');
-  DocumentReference<Map<String, dynamic>> _counters(String cid) =>
-      _company(cid).collection('meta').doc('counters');
 
   @override
-  Future<Purchase> receive(String companyId, PurchaseRequest req) async {
+  Future<Purchase> receive(
+      String companyId, String branchId, PurchaseRequest req) async {
+    if (branchId.isEmpty) throw StateError('No branch selected');
     if (req.items.isEmpty) {
       throw StateError('Add at least one product to receive');
     }
 
-    final purchaseRef = _purchases(companyId).doc();
-    final counterRef = _counters(companyId);
+    final purchaseRef = _purchases(companyId, branchId).doc();
+    final counterRef = _counters(companyId, branchId);
     final supplierRef =
         req.supplierId.isEmpty ? null : _suppliers(companyId).doc(req.supplierId);
     final now = DateTime.now();
 
     return _db.runTransaction<Purchase>((tx) async {
       // ---- READS ----
-      final productRefs = {
+      final stockRefs = {
         for (final item in req.items)
-          item.productId: _products(companyId).doc(item.productId)
+          item.productId: _stock(companyId, branchId).doc(item.productId)
       };
       final snaps = <String, DocumentSnapshot<Map<String, dynamic>>>{};
-      for (final e in productRefs.entries) {
+      for (final e in stockRefs.entries) {
         snaps[e.key] = await tx.get(e.value);
       }
       final counterSnap = await tx.get(counterRef);
@@ -57,11 +63,7 @@ class FirestorePurchasesRepository implements PurchasesRepository {
       num subtotal = 0;
       final newStock = <String, num>{};
       for (final item in req.items) {
-        final snap = snaps[item.productId]!;
-        if (!snap.exists) {
-          throw StateError('“${item.name}” no longer exists');
-        }
-        final current = (snap.data()?['stock'] ?? 0) as num;
+        final current = (snaps[item.productId]?.data()?['qty'] ?? 0) as num;
         newStock[item.productId] = current + item.quantity;
         subtotal += item.quantity * item.unitCost;
       }
@@ -95,13 +97,16 @@ class FirestorePurchasesRepository implements PurchasesRepository {
       tx.set(counterRef, {'purchases': nextNo}, SetOptions(merge: true));
 
       for (final item in req.items) {
-        final update = <String, dynamic>{'stock': newStock[item.productId]};
-        if (req.updateCostPrice && item.unitCost > 0) {
-          update['purchasePrice'] = item.unitCost;
-        }
-        tx.update(productRefs[item.productId]!, update);
+        tx.set(stockRefs[item.productId]!, {'qty': newStock[item.productId]},
+            SetOptions(merge: true));
 
-        final moveRef = _movements(companyId).doc();
+        // Keep the catalog's latest cost price up to date (company-wide).
+        if (req.updateCostPrice && item.unitCost > 0) {
+          tx.set(_products(companyId).doc(item.productId),
+              {'purchasePrice': item.unitCost}, SetOptions(merge: true));
+        }
+
+        final moveRef = _movements(companyId, branchId).doc();
         tx.set(
           moveRef,
           StockMovement(
@@ -117,7 +122,6 @@ class FirestorePurchasesRepository implements PurchasesRepository {
         );
       }
 
-      // Increase supplier payable by any unpaid balance.
       if (supplierRef != null && supplierSnap != null && due > 0) {
         final currentDue = (supplierSnap.data()?['dueAmount'] ?? 0) as num;
         tx.update(supplierRef, {'dueAmount': currentDue + due});
@@ -128,9 +132,10 @@ class FirestorePurchasesRepository implements PurchasesRepository {
   }
 
   @override
-  Stream<List<Purchase>> watchRecentPurchases(String companyId,
+  Stream<List<Purchase>> watchRecentPurchases(String companyId, String branchId,
       {int limit = 100}) {
-    return _purchases(companyId)
+    if (branchId.isEmpty) return Stream.value(const []);
+    return _purchases(companyId, branchId)
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()

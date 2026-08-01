@@ -45,6 +45,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             onFilter: (f) => setState(() => _filter = f),
             onAdd: () => _openForm(context),
           ),
+          const _MigrationBanner(),
           const SizedBox(height: AppSpace.lg),
           Expanded(
             child: productsAsync.when(
@@ -98,6 +99,81 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 }
 
 enum _StockFilter { all, low, out }
+
+/// Shown when products created before multi-branch have stock that hasn't been
+/// imported into the current branch. One tap seeds the branch stock.
+class _MigrationBanner extends ConsumerStatefulWidget {
+  const _MigrationBanner();
+
+  @override
+  ConsumerState<_MigrationBanner> createState() => _MigrationBannerState();
+}
+
+class _MigrationBannerState extends ConsumerState<_MigrationBanner> {
+  bool _busy = false;
+
+  Future<void> _import() async {
+    setState(() => _busy = true);
+    try {
+      final n = await ref.read(inventoryActionsProvider).importLegacyStock();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Imported stock for $n product${n == 1 ? '' : 's'}')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Import failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = ref.watch(legacyStockToImportProvider);
+    final canEdit = ref.watch(accessProvider).can(Perm.inventoryEdit);
+    if (count == 0 || !canEdit) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(top: AppSpace.md),
+      padding: const EdgeInsets.all(AppSpace.md),
+      decoration: BoxDecoration(
+        color: scheme.tertiary.withValues(alpha: 0.12),
+        borderRadius: AppRadius.field,
+        border: Border.all(color: scheme.tertiary.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, size: 20, color: scheme.tertiary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$count product${count == 1 ? '' : 's'} have stock from before '
+              'branches were added. Import it into this branch to see correct '
+              'quantities.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton(
+            onPressed: _busy ? null : _import,
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+            child: _busy
+                ? const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Text('Import stock'),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _Toolbar extends StatelessWidget {
   const _Toolbar({

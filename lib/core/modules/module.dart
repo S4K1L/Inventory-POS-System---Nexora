@@ -16,7 +16,9 @@ enum ModuleId {
   crm('crm'),
   hr('hr'),
   payroll('payroll'),
-  accounting('accounting');
+  accounting('accounting'),
+  users('users'),
+  branches('branches');
 
   const ModuleId(this.id);
   final String id;
@@ -185,6 +187,29 @@ class ModuleRegistry {
     premium: true,
   );
 
+  /// Staff management. Core (every company has it) but gated to users who can
+  /// manage users — so owners/managers see it, cashiers don't.
+  static const users = ModuleManifest(
+    id: ModuleId.users,
+    name: 'Users',
+    icon: Icons.manage_accounts_outlined,
+    route: '/users',
+    viewPermission: Perm.usersManage,
+    group: 'Back Office',
+    core: true,
+  );
+
+  /// Branch/sub-store management. Owner-only (settings permission).
+  static const branches = ModuleManifest(
+    id: ModuleId.branches,
+    name: 'Branches',
+    icon: Icons.storefront_outlined,
+    route: '/branches',
+    viewPermission: Perm.settingsManage,
+    group: 'Back Office',
+    core: true,
+  );
+
   /// Every module, in display order.
   static const all = <ModuleManifest>[
     inventory,
@@ -199,6 +224,8 @@ class ModuleRegistry {
     hr,
     payroll,
     accounting,
+    users,
+    branches,
   ];
 
   static ModuleManifest byId(ModuleId id) =>

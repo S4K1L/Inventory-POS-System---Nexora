@@ -18,6 +18,7 @@ class CartLine {
         name: product.name,
         unitPrice: product.sellingPrice,
         quantity: quantity,
+        unitCost: product.purchasePrice,
       );
 }
 
@@ -28,6 +29,7 @@ class Cart {
     this.lines = const [],
     this.discount = 0,
     this.taxRate = 0,
+    this.customerId = '',
     this.customerName = '',
   });
 
@@ -38,6 +40,7 @@ class Cart {
   final num taxRate;
 
   /// Optional customer this sale is attached to.
+  final String customerId;
   final String customerName;
 
   bool get isEmpty => lines.isEmpty;
@@ -53,12 +56,14 @@ class Cart {
     List<CartLine>? lines,
     num? discount,
     num? taxRate,
+    String? customerId,
     String? customerName,
   }) =>
       Cart(
         lines: lines ?? this.lines,
         discount: discount ?? this.discount,
         taxRate: taxRate ?? this.taxRate,
+        customerId: customerId ?? this.customerId,
         customerName: customerName ?? this.customerName,
       );
 }

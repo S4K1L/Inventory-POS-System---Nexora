@@ -37,6 +37,7 @@ class SaleItem {
     required this.name,
     required this.unitPrice,
     required this.quantity,
+    this.unitCost = 0,
   });
 
   final String productId;
@@ -44,13 +45,19 @@ class SaleItem {
   final num unitPrice;
   final num quantity;
 
+  /// Cost price captured at the moment of sale, so profit stays accurate even
+  /// if the product's cost changes later.
+  final num unitCost;
+
   num get lineTotal => unitPrice * quantity;
+  num get lineCost => unitCost * quantity;
 
   Map<String, dynamic> toMap() => {
         'productId': productId,
         'name': name,
         'unitPrice': unitPrice,
         'quantity': quantity,
+        'unitCost': unitCost,
         'lineTotal': lineTotal,
       };
 
@@ -59,6 +66,7 @@ class SaleItem {
         name: (data['name'] ?? '') as String,
         unitPrice: (data['unitPrice'] ?? 0) as num,
         quantity: (data['quantity'] ?? 0) as num,
+        unitCost: (data['unitCost'] ?? 0) as num,
       );
 }
 
@@ -75,6 +83,7 @@ class Sale {
     required this.paid,
     required this.paymentMethod,
     required this.createdAt,
+    this.customerId = '',
     this.customerName = '',
     this.userId = '',
   });
@@ -89,10 +98,12 @@ class Sale {
   final num paid;
   final PaymentMethod paymentMethod;
   final DateTime createdAt;
+  final String customerId;
   final String customerName;
   final String userId;
 
   num get change => (paid - total).clamp(0, double.infinity);
+  num get due => (total - paid).clamp(0, double.infinity);
   int get itemCount => items.fold(0, (n, i) => n + i.quantity.toInt());
 
   Map<String, dynamic> toMap() => {
@@ -104,7 +115,9 @@ class Sale {
         'total': total,
         'paid': paid,
         'change': change,
+        'due': due,
         'paymentMethod': paymentMethod.id,
+        'customerId': customerId,
         'customerName': customerName,
         'userId': userId,
         'createdAt': createdAt.toIso8601String(),
@@ -124,6 +137,7 @@ class Sale {
       total: (data['total'] ?? 0) as num,
       paid: (data['paid'] ?? 0) as num,
       paymentMethod: PaymentMethod.fromId(data['paymentMethod'] as String?),
+      customerId: (data['customerId'] ?? '') as String,
       customerName: (data['customerName'] ?? '') as String,
       userId: (data['userId'] ?? '') as String,
       createdAt:

@@ -3,20 +3,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
+import '../auth/ui/account_status_screen.dart';
 import '../auth/ui/login_screen.dart';
 import '../auth/ui/onboarding_screen.dart';
 import '../auth/ui/register_screen.dart';
 import '../company/company_providers.dart';
+import '../platform/platform_admin.dart';
 import '../shell/home_shell.dart';
 import '../shell/splash_screen.dart';
+import '../../modules/admin/ui/admin_dashboard_screen.dart';
 
-/// Central router. Redirects are driven by two signals:
-///   - auth state:  loading -> splash, signed out -> /login
-///   - profile:     signed in but no company yet -> /onboarding, else -> app
+/// Central router. Redirects are driven by auth state, then the profile
+/// (company assigned?), then the company's subscription (approved + active?),
+/// with a super-admin route for the platform operator.
 final routerProvider = Provider<GoRouter>((ref) {
-  // Watch both so the redirect re-runs when either resolves.
   final authState = ref.watch(authStateProvider);
   final profileState = ref.watch(profileProvider);
+  final companyState = ref.watch(companyProvider);
+  final isAdmin = ref.watch(isPlatformAdminProvider);
 
   return GoRouter(
     initialLocation: '/',
@@ -24,7 +28,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loc = state.matchedLocation;
       final onAuthPage = loc == '/login' || loc == '/register';
 
-      // Auth status not resolved yet.
       if (authState.isLoading || authState.hasError) {
         return loc == '/splash' ? null : '/splash';
       }
@@ -34,18 +37,35 @@ final routerProvider = Provider<GoRouter>((ref) {
         return onAuthPage ? null : '/login';
       }
 
-      // Signed in — wait for the profile to load before deciding onboarding.
-      if (profileState.isLoading) {
-        return loc == '/splash' ? null : '/splash';
-      }
-
+      // Signed in — resolve the profile.
+      if (profileState.isLoading) return loc == '/splash' ? null : '/splash';
       final hasCompany = profileState.value?.hasCompany ?? false;
-      if (!hasCompany) {
-        return loc == '/onboarding' ? null : '/onboarding';
+
+      // A platform admin with no tenant is a pure operator: land on /admin,
+      // never the store app or onboarding.
+      if (!hasCompany && isAdmin) {
+        return loc == '/admin' ? null : '/admin';
+      }
+      if (!hasCompany) return loc == '/onboarding' ? null : '/onboarding';
+
+      // The platform admin can always reach the admin dashboard.
+      if (loc == '/admin') return isAdmin ? null : '/';
+
+      // Resolve the company + its subscription state.
+      if (companyState.isLoading) return loc == '/splash' ? null : '/splash';
+      final company = companyState.value;
+      final active = company?.isActive ?? false;
+      if (!active) {
+        return loc == '/account-status' ? null : '/account-status';
       }
 
-      // Fully set up — bounce away from auth/splash/onboarding into the app.
-      if (loc == '/splash' || onAuthPage || loc == '/onboarding') return '/';
+      // Fully set up and active.
+      if (loc == '/splash' ||
+          onAuthPage ||
+          loc == '/onboarding' ||
+          loc == '/account-status') {
+        return '/';
+      }
       return null;
     },
     routes: [
@@ -53,6 +73,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
       GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
+      GoRoute(path: '/account-status', builder: (context, state) => const AccountStatusScreen()),
+      GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
       GoRoute(path: '/', builder: (context, state) => const HomeShell()),
     ],
     errorBuilder: (context, state) => Scaffold(

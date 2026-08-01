@@ -4,13 +4,11 @@ import '../../inventory/domain/stock_movement.dart';
 import '../domain/sale.dart';
 import '../domain/sales_repository.dart';
 
-/// Firestore implementation of POS sales.
+/// Firestore implementation of POS sales — scoped per branch.
 ///
-/// [checkout] runs a single transaction that: reads every product + the
-/// invoice counter, validates stock, then writes the sale, a `sale` stock
-/// movement per line, decremented product stock, and the bumped counter — all
-/// or nothing. Firestore requires all reads before any writes, which this
-/// respects.
+/// Per branch:  companies/{cid}/branches/{bid}/sales,  /stock/{pid} { qty },
+///              /stock_movements,  /meta/counters
+/// Company-wide: customers (credit due is tracked on the shared customer).
 class FirestoreSalesRepository implements SalesRepository {
   FirestoreSalesRepository(this._db);
 
@@ -18,46 +16,51 @@ class FirestoreSalesRepository implements SalesRepository {
 
   DocumentReference<Map<String, dynamic>> _company(String cid) =>
       _db.collection('companies').doc(cid);
-  CollectionReference<Map<String, dynamic>> _sales(String cid) =>
-      _company(cid).collection('sales');
-  CollectionReference<Map<String, dynamic>> _products(String cid) =>
-      _company(cid).collection('products');
-  CollectionReference<Map<String, dynamic>> _movements(String cid) =>
-      _company(cid).collection('stock_movements');
-  DocumentReference<Map<String, dynamic>> _counters(String cid) =>
-      _company(cid).collection('meta').doc('counters');
+  DocumentReference<Map<String, dynamic>> _branch(String cid, String bid) =>
+      _company(cid).collection('branches').doc(bid);
+  CollectionReference<Map<String, dynamic>> _sales(String cid, String bid) =>
+      _branch(cid, bid).collection('sales');
+  CollectionReference<Map<String, dynamic>> _stock(String cid, String bid) =>
+      _branch(cid, bid).collection('stock');
+  CollectionReference<Map<String, dynamic>> _movements(String cid, String bid) =>
+      _branch(cid, bid).collection('stock_movements');
+  DocumentReference<Map<String, dynamic>> _counters(String cid, String bid) =>
+      _branch(cid, bid).collection('meta').doc('counters');
+  CollectionReference<Map<String, dynamic>> _customers(String cid) =>
+      _company(cid).collection('customers');
 
   @override
-  Future<Sale> checkout(String companyId, CheckoutRequest req) async {
-    if (req.items.isEmpty) {
-      throw StateError('Cannot check out an empty cart');
-    }
+  Future<Sale> checkout(
+      String companyId, String branchId, CheckoutRequest req) async {
+    if (branchId.isEmpty) throw StateError('No branch selected');
+    if (req.items.isEmpty) throw StateError('Cannot check out an empty cart');
 
-    final saleRef = _sales(companyId).doc();
-    final counterRef = _counters(companyId);
+    final saleRef = _sales(companyId, branchId).doc();
+    final counterRef = _counters(companyId, branchId);
+    final customerRef = req.customerId.isEmpty
+        ? null
+        : _customers(companyId).doc(req.customerId);
     final now = DateTime.now();
 
     return _db.runTransaction<Sale>((tx) async {
-      // ---- READS (must all precede writes) ----
-      final productRefs = {
+      // ---- READS ----
+      final stockRefs = {
         for (final item in req.items)
-          item.productId: _products(companyId).doc(item.productId)
+          item.productId: _stock(companyId, branchId).doc(item.productId)
       };
       final snaps = <String, DocumentSnapshot<Map<String, dynamic>>>{};
-      for (final entry in productRefs.entries) {
-        snaps[entry.key] = await tx.get(entry.value);
+      for (final e in stockRefs.entries) {
+        snaps[e.key] = await tx.get(e.value);
       }
       final counterSnap = await tx.get(counterRef);
+      DocumentSnapshot<Map<String, dynamic>>? customerSnap;
+      if (customerRef != null) customerSnap = await tx.get(customerRef);
 
       // ---- VALIDATE + COMPUTE ----
       num subtotal = 0;
       final newStock = <String, num>{};
       for (final item in req.items) {
-        final snap = snaps[item.productId]!;
-        if (!snap.exists) {
-          throw StateError('“${item.name}” no longer exists');
-        }
-        final current = (snap.data()?['stock'] ?? 0) as num;
+        final current = (snaps[item.productId]?.data()?['qty'] ?? 0) as num;
         final remaining = current - item.quantity;
         if (remaining < 0) {
           throw StateError(
@@ -86,6 +89,7 @@ class FirestoreSalesRepository implements SalesRepository {
         paid: req.paid,
         paymentMethod: req.paymentMethod,
         createdAt: now,
+        customerId: req.customerId,
         customerName: req.customerName,
         userId: req.userId,
       );
@@ -94,9 +98,9 @@ class FirestoreSalesRepository implements SalesRepository {
       tx.set(saleRef, sale.toMap());
       tx.set(counterRef, {'sales': nextNo}, SetOptions(merge: true));
       for (final item in req.items) {
-        tx.update(productRefs[item.productId]!,
-            {'stock': newStock[item.productId]});
-        final moveRef = _movements(companyId).doc();
+        tx.set(stockRefs[item.productId]!, {'qty': newStock[item.productId]},
+            SetOptions(merge: true));
+        final moveRef = _movements(companyId, branchId).doc();
         tx.set(
           moveRef,
           StockMovement(
@@ -112,21 +116,35 @@ class FirestoreSalesRepository implements SalesRepository {
         );
       }
 
+      // Credit sale: add any unpaid balance to the (company-wide) customer.
+      final due = total - req.paid;
+      if (customerRef != null &&
+          customerSnap != null &&
+          customerSnap.exists &&
+          due > 0) {
+        final currentDue = (customerSnap.data()?['dueAmount'] ?? 0) as num;
+        tx.update(customerRef, {'dueAmount': currentDue + due});
+      }
+
       return sale;
     });
   }
 
   @override
-  Stream<List<Sale>> watchSalesSince(String companyId, DateTime from) {
-    return _sales(companyId)
+  Stream<List<Sale>> watchSalesSince(
+      String companyId, String branchId, DateTime from) {
+    if (branchId.isEmpty) return Stream.value(const []);
+    return _sales(companyId, branchId)
         .where('createdAt', isGreaterThanOrEqualTo: from.toIso8601String())
         .snapshots()
         .map((s) => s.docs.map((d) => Sale.fromMap(d.id, d.data())).toList());
   }
 
   @override
-  Stream<List<Sale>> watchRecentSales(String companyId, {int limit = 50}) {
-    return _sales(companyId)
+  Stream<List<Sale>> watchRecentSales(String companyId, String branchId,
+      {int limit = 50}) {
+    if (branchId.isEmpty) return Stream.value(const []);
+    return _sales(companyId, branchId)
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()

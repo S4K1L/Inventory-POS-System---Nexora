@@ -50,10 +50,13 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
 
   num get _paidAmount => num.tryParse(_paid.text.trim()) ?? 0;
   num get _change => (_paidAmount - widget.cart.total).clamp(0, double.infinity);
+  num get _due => (widget.cart.total - _paidAmount).clamp(0, double.infinity);
+  bool get _hasCustomer => widget.cart.customerId.isNotEmpty;
 
   Future<void> _confirm() async {
-    if (_paidAmount < widget.cart.total) {
-      setState(() => _error = 'Amount paid is less than the total');
+    if (_paidAmount < widget.cart.total && !_hasCustomer) {
+      setState(() => _error =
+          'Attach a customer to leave a balance due, or collect the full amount');
       return;
     }
     setState(() {
@@ -65,6 +68,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
             cart: widget.cart,
             paid: _paidAmount,
             method: _method,
+            customerId: widget.cart.customerId,
             customerName: widget.cart.customerName,
           );
       ref.read(cartProvider.notifier).clear();
@@ -169,9 +173,13 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Change', style: text.bodyMedium),
-                Text(Fmt.money(_change, currency: currency),
-                    style: text.titleMedium),
+                Text(_due > 0 ? 'Balance due' : 'Change',
+                    style: text.bodyMedium),
+                Text(
+                  Fmt.money(_due > 0 ? _due : _change, currency: currency),
+                  style: text.titleMedium?.copyWith(
+                      color: _due > 0 ? AppColors.warning : null),
+                ),
               ],
             ),
           ),

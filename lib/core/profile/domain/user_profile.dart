@@ -10,6 +10,7 @@ class UserProfile {
     required this.email,
     required this.companyId,
     required this.roleId,
+    this.branchId = '',
     this.displayName,
     this.active = true,
   });
@@ -20,6 +21,10 @@ class UserProfile {
 
   /// Built-in role id (see [Roles]) or a company-defined custom role id.
   final String roleId;
+
+  /// The branch this user is locked to. Empty = not branch-scoped (owner /
+  /// manager), so they can switch between and monitor all branches.
+  final String branchId;
 
   final String? displayName;
   final bool active;
@@ -46,6 +51,7 @@ class UserProfile {
       email: (data['email'] ?? '') as String,
       companyId: (data['companyId'] ?? '') as String,
       roleId: (data['roleId'] ?? 'cashier') as String,
+      branchId: (data['branchId'] ?? '') as String,
       displayName: data['displayName'] as String?,
       active: data['active'] != false,
     );
@@ -55,6 +61,7 @@ class UserProfile {
         'email': email,
         'companyId': companyId,
         'roleId': roleId,
+        'branchId': branchId,
         'displayName': displayName,
         'active': active,
       };

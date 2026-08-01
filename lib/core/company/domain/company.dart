@@ -1,26 +1,40 @@
 import '../../modules/module.dart';
 import 'plan.dart';
 
-/// A tenant. One [Company] owns its own inventory, sales, users, and — most
-/// importantly here — its own module and feature toggles.
-///
-/// Firestore shape (`companies/{id}`):
-/// ```
-/// {
-///   name: "Shakil Store",
-///   currency: "BDT",
-///   plan: "business",
-///   modules:  { "crm": true, "payroll": false },   // per-company overrides
-///   features: { "inventory.barcode": true, "inventory.qr": false }
-/// }
-/// ```
+/// Where a tenant sits in the platform approval/subscription lifecycle.
+enum CompanyStatus {
+  pending('pending', 'Pending approval'),
+  approved('approved', 'Active'),
+  suspended('suspended', 'Suspended');
+
+  const CompanyStatus(this.id, this.label);
+  final String id;
+  final String label;
+
+  /// Legacy companies (no status field) are treated as approved so existing
+  /// tenants aren't locked out; new signups explicitly write `pending`.
+  static CompanyStatus fromId(String? id) {
+    return CompanyStatus.values.firstWhere(
+      (s) => s.id == id,
+      orElse: () => CompanyStatus.approved,
+    );
+  }
+}
+
+/// A tenant. Owns its own inventory, sales, users, branches, module/feature
+/// toggles, and its subscription state (status + plan + expiry) set by the
+/// platform admin.
 class Company {
   const Company({
     required this.id,
     required this.name,
     this.currency = 'BDT',
     this.timezone = 'Asia/Dhaka',
-    this.plan = PlanTier.starter,
+    this.plan = PlanTier.demo,
+    this.status = CompanyStatus.approved,
+    this.planExpiresAt,
+    this.ownerEmail = '',
+    this.createdAt,
     this.moduleOverrides = const {},
     this.features = const {},
   });
@@ -30,10 +44,16 @@ class Company {
   final String currency;
   final String timezone;
   final PlanTier plan;
+  final CompanyStatus status;
 
-  /// Explicit per-company module toggles. Overrides the plan default in either
-  /// direction: `{crm: true}` grants CRM even on Starter; `{pos: false}` blocks
-  /// POS even on a plan that includes it.
+  /// When the current plan lapses. Null = no expiry set yet (e.g. pending).
+  final DateTime? planExpiresAt;
+
+  final String ownerEmail;
+  final DateTime? createdAt;
+
+  /// Per-company module toggles overriding the plan default in either
+  /// direction.
   final Map<String, bool> moduleOverrides;
 
   /// Sub-feature flags within a module, e.g. `inventory.barcode`.
@@ -42,8 +62,21 @@ class Company {
   static const empty = Company(id: '', name: '');
   bool get isEmpty => id.isEmpty;
 
-  /// The resolution rule: core modules are always on; otherwise an explicit
-  /// override wins; otherwise fall back to the plan bundle.
+  bool get isExpired =>
+      planExpiresAt != null && DateTime.now().isAfter(planExpiresAt!);
+
+  /// The tenant can use the app only when approved and within its plan period.
+  bool get isActive => status == CompanyStatus.approved && !isExpired;
+
+  /// Days left on the current plan (0 if expired / none).
+  int get daysLeft {
+    if (planExpiresAt == null) return 0;
+    final diff = planExpiresAt!.difference(DateTime.now()).inDays;
+    return diff < 0 ? 0 : diff;
+  }
+
+  /// Module resolution: core modules always on; explicit override wins;
+  /// otherwise the plan bundle decides (Pro modules locked on Demo/Starter).
   bool hasModule(ModuleManifest module) {
     if (module.core) return true;
     final override = moduleOverrides[module.id.id];
@@ -51,7 +84,6 @@ class Company {
     return PlanCatalog.modulesFor(plan).contains(module.id);
   }
 
-  /// A feature flag. [defaultValue] applies when the company hasn't set it.
   bool hasFeature(String key, {bool defaultValue = false}) {
     return features[key] ?? defaultValue;
   }
@@ -63,6 +95,10 @@ class Company {
       currency: (data['currency'] ?? 'BDT') as String,
       timezone: (data['timezone'] ?? 'Asia/Dhaka') as String,
       plan: PlanTier.fromId(data['plan'] as String?),
+      status: CompanyStatus.fromId(data['status'] as String?),
+      planExpiresAt: _date(data['planExpiresAt']),
+      ownerEmail: (data['ownerEmail'] ?? '') as String,
+      createdAt: _date(data['createdAt']),
       moduleOverrides: _boolMap(data['modules']),
       features: _boolMap(data['features']),
     );
@@ -73,9 +109,16 @@ class Company {
         'currency': currency,
         'timezone': timezone,
         'plan': plan.id,
+        'status': status.id,
+        'planExpiresAt': planExpiresAt?.toIso8601String(),
+        'ownerEmail': ownerEmail,
+        'createdAt': createdAt?.toIso8601String(),
         'modules': moduleOverrides,
         'features': features,
       };
+
+  static DateTime? _date(dynamic raw) =>
+      raw is String ? DateTime.tryParse(raw) : null;
 
   static Map<String, bool> _boolMap(dynamic raw) {
     if (raw is! Map) return const {};

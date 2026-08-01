@@ -25,6 +25,15 @@ abstract interface class AuthRepository {
   Future<void> sendPasswordReset(String email);
 
   Future<void> signOut();
+
+  /// Creates a new auth account for an employee WITHOUT signing the current
+  /// (owner) user out. Returns the new user's uid. The caller is responsible
+  /// for writing the employee's profile document.
+  Future<String> createEmployeeAccount({
+    required String email,
+    required String password,
+    String? displayName,
+  });
 }
 
 /// Thrown by [AuthRepository] implementations with a user-friendly message.
