@@ -21,7 +21,7 @@ service cloud.firestore {
     // lib/core/platform/platform_admin.dart (kPlatformAdminEmails).
     function isPlatformAdmin() {
       return request.auth != null &&
-        request.auth.token.email in ['admin@nexora.net', 'codewithshakil@gmail.com'];
+        request.auth.token.email in ['admin@nexora.net'];
     }
 
     // A tenant may edit its own company profile but NOT its subscription
@@ -61,10 +61,18 @@ service cloud.firestore {
       allow update: if isPlatformAdmin() ||
         (isOwner(companyId) && subscriptionUnchanged());
 
-      // Business data under the company inherits membership-based access.
+      // Business data under the company: members read/write their own; the
+      // platform admin has read-only visibility for monitoring/support.
       match /{document=**} {
-        allow read, write: if request.auth != null && myCompanyId() == companyId;
+        allow read: if isPlatformAdmin() ||
+          (request.auth != null && myCompanyId() == companyId);
+        allow write: if request.auth != null && myCompanyId() == companyId;
       }
+    }
+
+    // Platform-wide config (pricing, trial length) — admin only.
+    match /platform/{doc} {
+      allow read, write: if isPlatformAdmin();
     }
   }
 }

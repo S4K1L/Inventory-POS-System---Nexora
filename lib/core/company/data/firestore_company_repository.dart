@@ -62,15 +62,24 @@ class FirestoreCompanyRepository implements CompanyRepository {
       displayName: ownerDisplayName,
     );
 
-    // Every company starts with one branch so there's somewhere to operate.
-    final branchRef = companyRef.collection('branches').doc();
-
-    // Create atomically so a user is never left without a company or branch.
+    // Step 1: company + owner profile together. (A branch can't go in this
+    // batch — the branch security rule reads the owner's profile via get(),
+    // which isn't committed yet, so it would be denied.)
     final batch = _db.batch();
     batch.set(companyRef, company.toMap());
-    batch.set(branchRef, {'name': 'Main Branch', 'active': true});
     batch.set(_users.doc(ownerUid), profile.toMap());
     await batch.commit();
+
+    // Step 2: the default branch. Now that the profile exists, the branch write
+    // is permitted. Non-fatal if it fails — the account is already created and
+    // a branch can be added later.
+    try {
+      await companyRef
+          .collection('branches')
+          .add({'name': 'Main Branch', 'active': true});
+    } catch (_) {
+      // Ignore — onboarding still succeeded.
+    }
 
     return companyRef.id;
   }

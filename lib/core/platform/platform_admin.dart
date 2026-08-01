@@ -9,7 +9,6 @@ import '../auth/auth_providers.dart';
 /// EDIT THIS to add/remove platform admins.
 const kPlatformAdminEmails = <String>{
   'admin@nexora.net',
-  'codewithshakil@gmail.com',
 };
 
 bool isPlatformAdminEmail(String email) =>

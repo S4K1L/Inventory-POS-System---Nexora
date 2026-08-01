@@ -199,7 +199,8 @@ class ModuleRegistry {
     core: true,
   );
 
-  /// Branch/sub-store management. Owner-only (settings permission).
+  /// Branch/sub-store management. Owner-only (settings permission) and Pro-only
+  /// — on Demo/Starter the tenant runs a single main shop.
   static const branches = ModuleManifest(
     id: ModuleId.branches,
     name: 'Branches',
@@ -207,7 +208,7 @@ class ModuleRegistry {
     route: '/branches',
     viewPermission: Perm.settingsManage,
     group: 'Back Office',
-    core: true,
+    premium: true,
   );
 
   /// Every module, in display order.

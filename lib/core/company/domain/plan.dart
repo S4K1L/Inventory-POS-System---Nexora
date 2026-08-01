@@ -34,6 +34,7 @@ class PlanCatalog {
     ModuleId.hr,
     ModuleId.payroll,
     ModuleId.accounting,
+    ModuleId.branches,
   };
 
   /// Everything except the Pro-only modules — available on every plan.

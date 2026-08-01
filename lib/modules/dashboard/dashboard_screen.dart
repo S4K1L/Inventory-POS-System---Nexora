@@ -26,8 +26,10 @@ class DashboardScreen extends ConsumerWidget {
     final lowStock =
         products.where((p) => p.isLowStock || p.isOutOfStock).take(6).toList();
 
-    final firstName =
-        (profile.displayName ?? profile.email).split(' ').first;
+    final rawName = (profile.displayName?.trim().isNotEmpty ?? false)
+        ? profile.displayName!.trim()
+        : profile.email.split('@').first;
+    final firstName = rawName.split(RegExp(r'[ .]')).first;
 
     return LayoutBuilder(builder: (context, c) {
       final w = c.maxWidth;
@@ -40,12 +42,11 @@ class DashboardScreen extends ConsumerWidget {
           _WelcomeBanner(
             name: firstName,
             company: company.name,
-            plan: company.plan.label,
             onAddProduct: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => const ProductFormScreen(),
             )),
           ),
-          const SizedBox(height: AppSpace.xl),
+          const SizedBox(height: AppSpace.lg),
           GridView.count(
             crossAxisCount: cols,
             shrinkWrap: true,
@@ -119,99 +120,78 @@ class _WelcomeBanner extends StatelessWidget {
   const _WelcomeBanner({
     required this.name,
     required this.company,
-    required this.plan,
     required this.onAddProduct,
   });
 
   final String name;
   final String company;
-  final String plan;
   final VoidCallback onAddProduct;
 
   @override
   Widget build(BuildContext context) {
+    final tight = MediaQuery.sizeOf(context).width < 480;
     return Container(
-      padding: const EdgeInsets.all(AppSpace.xl),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       decoration: BoxDecoration(
         gradient: AppColors.brandGradient,
         borderRadius: AppRadius.card,
         boxShadow: [
           BoxShadow(
-            color: AppColors.brand.withValues(alpha: 0.25),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: AppColors.brand.withValues(alpha: 0.22),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Row(
         children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: const Icon(Icons.storefront_rounded,
+                color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                  child: Text('$plan plan',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
-                ),
-                const SizedBox(height: 14),
                 Text('Welcome back, $name 👋',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 26,
+                      fontSize: 19,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
+                      letterSpacing: -0.3,
                     )),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(company,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 15)),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: onAddProduct,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppColors.brand,
-                        minimumSize: const Size(0, 44),
-                      ),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add Product'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: null,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        disabledForegroundColor:
-                            Colors.white.withValues(alpha: 0.6),
-                        side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.5)),
-                        minimumSize: const Size(0, 44),
-                      ),
-                      icon: const Icon(Icons.point_of_sale, size: 18),
-                      label: const Text('New Sale (soon)'),
-                    ),
-                  ],
-                ),
+                        fontSize: 13)),
               ],
             ),
           ),
-          const SizedBox(width: AppSpace.lg),
-          if (MediaQuery.sizeOf(context).width >= 720)
-            Icon(Icons.storefront_rounded,
-                size: 92, color: Colors.white.withValues(alpha: 0.25)),
+          const SizedBox(width: 12),
+          FilledButton.icon(
+            onPressed: onAddProduct,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.brand,
+              minimumSize: const Size(0, 40),
+              padding: EdgeInsets.symmetric(horizontal: tight ? 12 : 16),
+            ),
+            icon: const Icon(Icons.add, size: 18),
+            label: Text(tight ? 'Add' : 'Add Product'),
+          ),
         ],
       ),
     );

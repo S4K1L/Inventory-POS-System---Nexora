@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../access/access.dart';
+import '../company/domain/plan.dart';
 import '../access/gates.dart';
 import '../company/company_providers.dart';
 import '../modules/module.dart';
@@ -136,6 +138,7 @@ class _TopBar extends ConsumerWidget {
               ],
             ),
           ),
+          const _SubscriptionChip(),
           const _BranchSelector(),
           const SizedBox(width: 10),
           if (!compact) ...[
@@ -180,6 +183,78 @@ class _TopBar extends ConsumerWidget {
   }
 }
 
+/// Subscription indicator in the app bar: an outlined pill showing the plan and
+/// a days-left badge that turns amber (≤7d) then red (≤3d) as expiry nears.
+class _SubscriptionChip extends ConsumerWidget {
+  const _SubscriptionChip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final company = ref.watch(currentCompanyProvider);
+    final expiry = company.planExpiresAt;
+    if (expiry == null) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    final days = company.daysLeft;
+    final isDemo = company.plan == PlanTier.demo;
+    final compact = MediaQuery.sizeOf(context).width < 760;
+
+    final color = days <= 3
+        ? AppColors.danger
+        : days <= 7
+            ? AppColors.warning
+            : (isDemo ? AppColors.accent : AppColors.brand);
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Tooltip(
+        message:
+            '${company.plan.label} plan · renews ${DateFormat('d MMM yyyy').format(expiry)}',
+        child: Container(
+          height: 40,
+          padding: EdgeInsets.only(left: compact ? 10 : 12, right: 6),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(color: scheme.outline),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isDemo ? Icons.science_outlined : Icons.workspace_premium_outlined,
+                size: 16,
+                color: color,
+              ),
+              if (!compact) ...[
+                const SizedBox(width: 6),
+                Text(company.plan.label,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 13)),
+              ],
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  '${days}d',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Branch chip in the top bar. Owners/managers can switch branches; a
 /// branch-locked employee sees their branch as a static (locked) chip.
 class _BranchSelector extends ConsumerWidget {
@@ -193,6 +268,11 @@ class _BranchSelector extends ConsumerWidget {
         (ref.watch(branchesProvider).value ?? const []).where((b) => b.active).toList();
     final canSwitch = ref.watch(canSwitchBranchProvider);
     final compact = MediaQuery.sizeOf(context).width < 620;
+
+    // Multi-branch is a Pro feature. On Demo/Starter there's just the main
+    // shop, so the branch selector is hidden entirely.
+    final hasBranches = ref.watch(accessProvider).hasModule(ModuleRegistry.branches);
+    if (!hasBranches) return const SizedBox.shrink();
 
     if (branch.isEmpty) return const SizedBox.shrink();
 

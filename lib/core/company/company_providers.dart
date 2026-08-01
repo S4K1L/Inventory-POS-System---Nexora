@@ -53,10 +53,11 @@ class AdminSubscription {
   AdminSubscription(this._repo);
   final CompanyRepository _repo;
 
-  /// Approve a company on [plan]. Demo runs 7 days; Starter/Pro run [months].
-  Future<void> approve(String companyId, PlanTier plan, {int months = 1}) {
+  /// Approve a company on [plan]. Demo runs [demoDays]; Starter/Pro run [months].
+  Future<void> approve(String companyId, PlanTier plan,
+      {int months = 1, int demoDays = 7}) {
     final expiry = plan == PlanTier.demo
-        ? DateTime.now().add(PlanTier.demoDuration)
+        ? DateTime.now().add(Duration(days: demoDays))
         : _addMonths(DateTime.now(), months);
     return _repo.adminUpdateSubscription(
       companyId: companyId,
@@ -66,14 +67,14 @@ class AdminSubscription {
     );
   }
 
-  /// Extend the current plan by [months] (or 7 days for demo).
-  Future<void> extend(Company company, {int months = 1}) {
+  /// Extend the current plan by [months] (or [demoDays] for demo).
+  Future<void> extend(Company company, {int months = 1, int demoDays = 7}) {
     final from = (company.planExpiresAt != null &&
             company.planExpiresAt!.isAfter(DateTime.now()))
         ? company.planExpiresAt!
         : DateTime.now();
     final expiry = company.plan == PlanTier.demo
-        ? from.add(PlanTier.demoDuration)
+        ? from.add(Duration(days: demoDays))
         : _addMonths(from, months);
     return _repo.adminUpdateSubscription(
       companyId: company.id,
@@ -83,10 +84,11 @@ class AdminSubscription {
     );
   }
 
-  /// Change plan, keeping the current expiry (or setting one for demo).
-  Future<void> changePlan(Company company, PlanTier plan, {int months = 1}) {
+  /// Change plan (resets the period from now).
+  Future<void> changePlan(Company company, PlanTier plan,
+      {int months = 1, int demoDays = 7}) {
     final expiry = plan == PlanTier.demo
-        ? DateTime.now().add(PlanTier.demoDuration)
+        ? DateTime.now().add(Duration(days: demoDays))
         : _addMonths(DateTime.now(), months);
     return _repo.adminUpdateSubscription(
       companyId: company.id,

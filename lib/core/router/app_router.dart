@@ -11,20 +11,29 @@ import '../company/company_providers.dart';
 import '../platform/platform_admin.dart';
 import '../shell/home_shell.dart';
 import '../shell/splash_screen.dart';
-import '../../modules/admin/ui/admin_dashboard_screen.dart';
+import '../../modules/admin/ui/admin_shell.dart';
 
-/// Central router. Redirects are driven by auth state, then the profile
-/// (company assigned?), then the company's subscription (approved + active?),
-/// with a super-admin route for the platform operator.
+/// Central router. The [GoRouter] is created ONCE and re-evaluates its redirect
+/// via a [refreshListenable] whenever auth/profile/company change — so the app
+/// doesn't rebuild the whole router (and re-navigate) on every stream emission.
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final profileState = ref.watch(profileProvider);
-  final companyState = ref.watch(companyProvider);
-  final isAdmin = ref.watch(isPlatformAdminProvider);
+  final refresh = ValueNotifier<int>(0);
+  void bump(Object? prev, Object? next) => refresh.value++;
+  // Re-run the redirect when any of these change, without rebuilding the router.
+  ref.listen(authStateProvider, bump);
+  ref.listen(profileProvider, bump);
+  ref.listen(companyProvider, bump);
+  ref.onDispose(refresh.dispose);
 
   return GoRouter(
     initialLocation: '/',
+    refreshListenable: refresh,
     redirect: (context, state) {
+      final authState = ref.read(authStateProvider);
+      final profileState = ref.read(profileProvider);
+      final companyState = ref.read(companyProvider);
+      final isAdmin = ref.read(isPlatformAdminProvider);
+
       final loc = state.matchedLocation;
       final onAuthPage = loc == '/login' || loc == '/register';
 
@@ -41,8 +50,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (profileState.isLoading) return loc == '/splash' ? null : '/splash';
       final hasCompany = profileState.value?.hasCompany ?? false;
 
-      // A platform admin with no tenant is a pure operator: land on /admin,
-      // never the store app or onboarding.
+      // A platform admin with no tenant is a pure operator: land on /admin.
       if (!hasCompany && isAdmin) {
         return loc == '/admin' ? null : '/admin';
       }
@@ -74,7 +82,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
       GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
       GoRoute(path: '/account-status', builder: (context, state) => const AccountStatusScreen()),
-      GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
+      GoRoute(path: '/admin', builder: (context, state) => const AdminShell()),
       GoRoute(path: '/', builder: (context, state) => const HomeShell()),
     ],
     errorBuilder: (context, state) => Scaffold(

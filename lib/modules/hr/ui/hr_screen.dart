@@ -33,6 +33,7 @@ class HrScreen extends ConsumerWidget {
                   style: Theme.of(context).textTheme.titleMedium),
               const Spacer(),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 42)),
                 onPressed: () async {
                   final picked = await showDatePicker(
                     context: context,
