@@ -9,6 +9,16 @@ import 'domain/cart.dart';
 import 'domain/sale.dart';
 import 'domain/sales_repository.dart';
 
+/// Dine In / Takeaway / Delivery — shared between the top action bar and the
+/// cart panel's dining/table selectors.
+const kDiningOptions = ['Dine In', 'Takeaway', 'Delivery'];
+
+/// Table labels offered by the quick table picker.
+const kTables = [
+  'T1', 'T2', 'T3', 'T4', 'T5', 'T6',
+  'T7', 'T8', 'T9', 'T10', 'T11', 'T12',
+];
+
 /// Swap seam for the sales backend.
 final salesRepositoryProvider = Provider<SalesRepository>((ref) {
   return FirestoreSalesRepository(FirebaseFirestore.instance);
@@ -65,8 +75,19 @@ class CartNotifier extends Notifier<Cart> {
     );
   }
 
+  void setLineNotes(String productId, String notes) {
+    final lines = [
+      for (final l in state.lines)
+        if (l.product.id == productId) l.copyWith(notes: notes) else l
+    ];
+    state = state.copyWith(lines: lines);
+  }
+
   void setDiscount(num value) =>
       state = state.copyWith(discount: value.clamp(0, double.infinity));
+
+  void setCouponDiscount(num value) => state =
+      state.copyWith(couponDiscount: value.clamp(0, double.infinity));
 
   void setTaxRate(num value) =>
       state = state.copyWith(taxRate: value.clamp(0, 100));
@@ -74,7 +95,30 @@ class CartNotifier extends Notifier<Cart> {
   void setCustomer(String id, String name) =>
       state = state.copyWith(customerId: id, customerName: name);
 
+  void setDiningOption(String option) =>
+      state = state.copyWith(diningOption: option);
+
+  void setTable(String label) => state = state.copyWith(tableLabel: label);
+
+  /// Replaces the whole cart, e.g. when restoring a saved draft.
+  void restore(Cart cart) => state = cart;
+
   void clear() => state = const Cart();
+}
+
+/// Sales parked mid-order ("Draft" on the POS cart footer) so the cashier can
+/// start a new sale and come back to them later. In-memory for the session —
+/// there is no drafts backend yet.
+final draftOrdersProvider =
+    NotifierProvider<DraftOrdersNotifier, List<Cart>>(DraftOrdersNotifier.new);
+
+class DraftOrdersNotifier extends Notifier<List<Cart>> {
+  @override
+  List<Cart> build() => const [];
+
+  void save(Cart cart) => state = [cart, ...state];
+
+  void removeAt(int index) => state = [...state]..removeAt(index);
 }
 
 /// Most recent sales (newest first) at the current branch — Sales History.
@@ -139,7 +183,7 @@ class CheckoutService {
       _branchId,
       CheckoutRequest(
         items: cart.lines.map((l) => l.toSaleItem()).toList(),
-        discount: cart.discount,
+        discount: cart.totalDiscount,
         taxRate: cart.taxRate,
         paid: paid,
         paymentMethod: method,
